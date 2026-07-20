@@ -1,0 +1,60 @@
+services:
+  # ─────────────────────────────────
+  # Open WebUI  (chat interface)
+  # ─────────────────────────────────
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    ports:
+      - "3000:8080"
+    environment:
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-change-me}
+      - ENABLE_OPENAI_API=false
+      - ENABLE_OLLAMA_API=false
+      # Connect to Pipelines server as OpenAI-compatible endpoint
+      - OPENAI_API_BASE_URLS=http://pipelines:9099
+      - OPENAI_API_KEYS=0p3n-w3bu!
+    volumes:
+      - open-webui-data:/app/backend/data
+    depends_on:
+      - pipelines
+    dns:
+      - 10.1.200.200
+      - 10.2.200.200
+      - 1.1.1.1
+    restart: unless-stopped
+
+  # ─────────────────────────────────
+  # Pipelines  (MCP Agent Pipeline)
+  # ─────────────────────────────────
+  pipelines:
+    image: ghcr.io/open-webui/pipelines:main
+    container_name: pipelines
+    ports:
+      - "9099:9099"
+    environment:
+      - PIPELINES_URLS=
+      - PROVIDER_API_BASE=${PROVIDER_API_BASE}
+      - PROVIDER_API_KEY=${PROVIDER_API_KEY}
+      - MCP_GATEWAY_URL=${MCP_GATEWAY_URL}
+      - MCP_LITELLM_API_KEY=${MCP_LITELLM_API_KEY}
+      - MCP_DD_API_KEY=${MCP_DD_API_KEY}
+      - MCP_HARBOR_URL=${MCP_HARBOR_URL}
+      - MCP_HARBOR_USERNAME=${MCP_HARBOR_USERNAME}
+      - MCP_HARBOR_PASSWORD=${MCP_HARBOR_PASSWORD}
+      - MCP_GITLAB_TOKEN=${MCP_GITLAB_TOKEN}
+      - MCP_JENKINS_URL=${MCP_JENKINS_URL}
+      - MCP_JENKINS_USERNAME=${MCP_JENKINS_USERNAME}
+      - MCP_JENKINS_PASSWORD=${MCP_JENKINS_PASSWORD}
+    volumes:
+      - ./pipelines:/app/pipelines
+      - pipelines-data:/app/pipelines-data
+    dns:
+      - 10.1.200.200
+      - 10.2.200.200
+      - 1.1.1.1
+    restart: unless-stopped
+
+volumes:
+  open-webui-data:
+  pipelines-data:
