@@ -24,9 +24,10 @@ A self-contained deployment of **Open WebUI** with a custom **Pipeline Agent** t
 ```bash
 git clone <this-repo>
 cd ai-content
+cp .env_example .env
 ```
 
-Edit the `.env` file and verify all values are correct:
+Edit the `.env` file and verify all values are set:
 
 ```bash
 cat .env
@@ -57,11 +58,11 @@ All settings are configurable in two ways:
 
 | Variable | Description |
 |----------|-------------|
-| `ICA_API_BASE` | IBM ICA API base URL |
-| `ICA_API_KEY` | IBM ICA Bearer token |
+| `PROVIDER_API_BASE` | LLM Provider API base URL |
+| `PROVIDER_API_KEY` | LLM Provider API key / Bearer token |
 | `MCP_GATEWAY_URL` | MCP Gateway HTTP endpoint |
 | `MCP_LITELLM_API_KEY` | LiteLLM API key header |
-| `MCP_DD_API_KEY` | DataDog API key header |
+| `MCP_DD_API_KEY` | DefectDojo API key header |
 | `MCP_HARBOR_URL` | Harbor registry URL |
 | `MCP_HARBOR_USERNAME` | Harbor username |
 | `MCP_HARBOR_PASSWORD` | Harbor password |
@@ -69,14 +70,15 @@ All settings are configurable in two ways:
 | `MCP_JENKINS_URL` | Jenkins URL |
 | `MCP_JENKINS_USERNAME` | Jenkins username |
 | `MCP_JENKINS_PASSWORD` | Jenkins password |
+| `WEBUI_SECRET_KEY` | Secret key for Open WebUI session signing |
 
 ### Pipeline Valves (UI)
 
 In Open WebUI, go to **Admin Panel → Settings → Pipelines** and click on the **MCP Agent** pipeline to edit its Valves:
 
-- **ICA_MODEL_ID** — Change the model (default: `granite-3.1-8b-instruct`)
-- **ICA_MAX_TOKENS** — Max response length (default: `4096`)
-- **ICA_TEMPERATURE** — Sampling temperature (default: `0.2`)
+- **PROVIDER_MODEL_ID** — Change the model (default: `global/anthropic.claude-sonnet-4-6`)
+- **PROVIDER_MAX_TOKENS** — Max response length (default: `4096`)
+- **PROVIDER_TEMPERATURE** — Sampling temperature (default: `0.2`)
 - **MAX_AGENT_ITERATIONS** — Max tool-call loops (default: `10`)
 
 ## How It Works
@@ -96,7 +98,7 @@ User Message
          ▼
 ┌────────────────────────┐
 │  3. Send messages +    │
-│     tool definitions   │ ──▶ IBM ICA (chat/completions)
+│     tool definitions   │ ──▶ LLM Provider API
 │     to LLM             │
 └────────┬───────────────┘
          │
@@ -149,8 +151,10 @@ docker compose exec pipelines curl -s http://ai-gateway.vayu.devopsnonprd.vayukt
 
 ```
 ai-content/
-├── .env                              # Secrets & configuration
+├── .env_example                      # Template for environment variables
+├── .env                              # Local secrets & config (git-ignored)
 ├── docker-compose.yml                # Docker stack definition
+├── kubernetes.yaml                   # Kubernetes deployment manifest
 ├── pipelines/
 │   └── mcp_agent_pipeline.py         # MCP Agent Pipeline
 └── README.md                         # This file
