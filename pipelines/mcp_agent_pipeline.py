@@ -111,6 +111,10 @@ class Pipeline:
             default=10,
             description="Maximum tool-call iterations before forcing a final answer",
         )
+        AGENTS_DIR: str = Field(
+            default="agents",
+            description="Path to directory containing .agent.md files (e.g. agents or .github/agents)",
+        )
     class UserValves(BaseModel):
         PROVIDER_API_KEY: str = Field(
             default="",
@@ -129,6 +133,7 @@ class Pipeline:
                 ),
                 "PROVIDER_API_KEY": os.getenv("PROVIDER_API_KEY", ""),
                 "PROVIDER_MODEL_ID": os.getenv("PROVIDER_MODEL_ID", "global/anthropic.claude-sonnet-4-6"),
+                "AGENTS_DIR": os.getenv("AGENTS_DIR", "agents"),
                 "MCP_GATEWAY_URL": os.getenv(
                     "MCP_GATEWAY_URL",
                     "http://ai-gateway.vayu.devopsnonprd.vayuktbcs/mcp",
@@ -388,6 +393,147 @@ class Pipeline:
         return tools
 
     # ────────────────────────────────────────
+    # Agent Markdown Loader & Orchestration
+    # ────────────────────────────────────────
+    def _parse_agent_md(self, file_path: str) -> Dict[str, Any]:
+        """Parse a .agent.md file into frontmatter metadata dict and body text."""
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        except Exception as exc:
+            print(f"[DevSecOps Agent] Failed to read agent file {file_path}: {exc}")
+            return {}
+
+        metadata: Dict[str, Any] = {"file_path": file_path, "name": os.path.basename(file_path)}
+        body = content.strip()
+
+        # Split YAML frontmatter demarcated by `---`
+        parts = re.split(r"^---\s*$", content, flags=re.MULTILINE)
+        if len(parts) >= 3:
+            frontmatter_str = parts[1]
+            body = "---".join(parts[2:]).strip()
+            for line in frontmatter_str.splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if ":" in line:
+                    key, val = line.split(":", 1)
+                    key = key.strip()
+                    val = val.strip().strip("'\"")
+                    if val.startswith("[") and val.endswith("]"):
+                        items = [i.strip().strip("'\"") for i in val[1:-1].split(",") if i.strip()]
+                        metadata[key] = items
+                    elif val.lower() == "true":
+                        metadata[key] = True
+                    elif val.lower() == "false":
+                        metadata[key] = False
+                    else:
+                        metadata[key] = val
+
+        metadata["body"] = body
+        return metadata
+
+    def _load_all_agents(self) -> Dict[str, Dict[str, Any]]:
+        """Load all .agent.md files from AGENTS_DIR directory."""
+        agents_dir = self.valves.AGENTS_DIR
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        search_paths = [
+            agents_dir,
+            os.path.join(base_dir, agents_dir),
+            "agents",
+            os.path.join(base_dir, "agents"),
+            ".github/agents",
+            os.path.join(base_dir, ".github/agents"),
+        ]
+
+        target_dir = None
+        for p in search_paths:
+            if os.path.isdir(p):
+                target_dir = p
+                break
+
+        if not target_dir:
+            print(f"[DevSecOps Agent] Warning: AGENTS_DIR '{agents_dir}' not found.")
+            return {}
+
+        agents_data: Dict[str, Dict[str, Any]] = {}
+        for fname in sorted(os.listdir(target_dir)):
+            if fname.endswith(".agent.md") or fname.endswith(".md"):
+                file_path = os.path.join(target_dir, fname)
+                parsed = self._parse_agent_md(file_path)
+                name = parsed.get("name") or fname.replace(".agent.md", "").replace(".md", "")
+                agents_data[name] = parsed
+
+        print(f"[DevSecOps Agent] Loaded {len(agents_data)} agents from {target_dir}: {list(agents_data.keys())}")
+        return agents_data
+
+    def _build_system_prompt(self) -> str:
+        """Build dynamic system prompt using devsecops orchestrator & sub-agents instructions."""
+        agents = self._load_all_agents()
+        orchestrator = agents.get("devsecops", {})
+        orchestrator_body = orchestrator.get("body", "")
+
+        sub_agents_prompts = []
+        for name, data in agents.items():
+            if name == "devsecops":
+                continue
+            desc = data.get("description", "")
+            body = data.get("body", "")
+            sub_agents_prompts.append(
+                f"### Sub-Agent: `{name}`\n"
+                f"**Description:** {desc}\n\n"
+                f"**Detailed Instructions & Workflow:**\n{body}\n"
+            )
+
+        sub_agents_text = "\n---\n".join(sub_agents_prompts) if sub_agents_prompts else "No sub-agents available."
+        tools_desc = self._mcp_tools_as_text_description()
+
+        header = (
+            "You are DevSecOps agent, the Lead Orchestration assistant for SDLC automation and security operations.\n"
+            "You automatically route user requests to specialized sub-agent workflows and execute tool calls using MCP tools.\n"
+        )
+
+        if orchestrator_body:
+            orchestration_instructions = f"## Lead Orchestrator Directive (`devsecops.agent.md`)\n\n{orchestrator_body}\n"
+        else:
+            orchestration_instructions = (
+                "## Lead Orchestrator Directive\n"
+                "1. Understand user intent.\n"
+                "2. Delegate to the matching sub-agent (dockerfile, defect-fixing, migration).\n"
+                "3. Follow the selected sub-agent's step-by-step workflow.\n"
+            )
+
+        system_prompt = (
+            f"{header}\n"
+            f"{orchestration_instructions}\n"
+            "==================================================\n"
+            "## AVAILABLE SUB-AGENTS & SPECIALIZED WORKFLOWS\n"
+            "==================================================\n\n"
+            f"{sub_agents_text}\n\n"
+            "==================================================\n"
+            "## AVAILABLE MCP TOOLS\n"
+            "==================================================\n\n"
+            f"{tools_desc}\n\n"
+            "==================================================\n"
+            "## TOOL CALL FORMAT & INSTRUCTIONS\n"
+            "==================================================\n"
+            "To call a tool, you MUST respond ONLY with a JSON code block in the following format:\n"
+            "```json\n"
+            "{\n"
+            '  "tool": "tool_name",\n'
+            '  "arguments": {\n'
+            '    "param_name": "param_value"\n'
+            "  }\n"
+            "}\n"
+            "```\n"
+            "Do not add any other text before or after the JSON block when calling a tool. "
+            "Only call one tool at a time.\n\n"
+            "Once you receive the tool result, you can make another tool call or provide your final answer.\n"
+            "When you have the final answer, output it normally as regular markdown text.\n"
+        )
+        return system_prompt
+
+    # ────────────────────────────────────────
     # LLM helpers
     # ────────────────────────────────────────
     def _get_provider_session(self) -> requests.Session:
@@ -602,48 +748,10 @@ class Pipeline:
         else:
             print(f"[DevSecOps Agent] Authenticated user: {user_email} (using global fallback key)")
 
-        # Format available tools as text description
-        tools_desc = self._mcp_tools_as_text_description()
-
-        # Inject system prompt with ReAct instructions
+        # Build dynamic system prompt incorporating devsecops orchestrator & sub-agent instructions
         system_msg = {
             "role": "system",
-            "content": (
-                "You are DevSecOps agent, a helpful DevOps and security assistant with access to MCP tools.\n"
-                "You can interact with GitLab, Jenkins, Harbor, Kubernetes, DefectDojo, and other services.\n\n"
-                "You MUST use tools to look up information or perform actions when requested. "
-                "Do NOT guess or assume information if a tool is available to look it up.\n\n"
-                "ANALYZING DEFECTDOJO FINDINGS FOR FALSE POSITIVES:\n"
-                "If a user asks about checking if a finding is a false positive (e.g. 'is this finding false positive'), you MUST:\n"
-                "1. Find the finding ID in the user prompt (or ask for clarification if missing).\n"
-                "2. Call `defectdojo-get_finding` with the `finding_id` to retrieve details of the finding.\n"
-                "3. Thoroughly analyze the finding details: description, severity, impact, scanner used, component/file path, and metadata.\n"
-                "4. Assess if the finding is a genuine issue or a false positive (e.g., check if it's a test file, mock code, unreachable path, or a known pattern of scanner noise).\n"
-                "5. Verify the severity: evaluate if it is genuinely 'Critical' or if it should be downgraded to normal/low/medium based on the description and context. If a finding is rated 'Critical' but is not actually critical in reality, classify it as a false positive for the severity type.\n"
-                "6. Present your reasoning and suggestions clearly to the user.\n"
-                "CRITICAL: Simply suggest and explain your reasoning. DO NOT modify the finding status, add notes, or make any changes in DefectDojo itself (e.g., do not call any update, note adding, or tag modification tools) unless explicitly requested by the user. You are only suggesting/analyzing.\n\n"
-                "SUGGESTING FIXES FOR FINDINGS DYNAMICALLY:\n"
-                "If a user asks how to fix a security finding (e.g., 'how to fix finding #123'), you MUST:\n"
-                "1. Retrieve the finding details using `defectdojo-get_finding`.\n"
-                "2. Locate the file path, component name, and repository name within the finding details.\n"
-                "3. Use GitLab tools (such as `gitlab_ro-get_file_contents` or search tools) to retrieve the actual source code of the affected file.\n"
-                "4. Analyze the source code alongside the vulnerability description to formulate a precise fix.\n"
-                "5. Provide a dynamic, tailored fix suggestion (e.g. a code diff or clear refactoring steps) matching the actual codebase.\n\n"
-                "To call a tool, you MUST respond ONLY with a JSON code block in the following format:\n"
-                "```json\n"
-                "{\n"
-                '  "tool": "tool_name",\n'
-                '  "arguments": {\n'
-                '    "param_name": "param_value"\n'
-                "  }\n"
-                "}\n"
-                "```\n"
-                "Do not add any other text before or after the JSON block when calling a tool. "
-                "Only call one tool at a time.\n\n"
-                "Once you receive the tool result, you can make another tool call or provide your final answer.\n"
-                "When you have the final answer, output it normally as regular markdown text.\n\n"
-                f"Available tools:\n{tools_desc}"
-            ),
+            "content": self._build_system_prompt(),
         }
 
         # Build conversation: system + user messages
