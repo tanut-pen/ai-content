@@ -76,10 +76,20 @@ All settings are configurable in two ways:
 
 In Open WebUI, go to **Admin Panel → Settings → Pipelines** and click on the **MCP Agent** pipeline to edit its Valves:
 
+- **AGENTS_DIR** — Directory containing `.agent.md` files (default: `agents`)
 - **PROVIDER_MODEL_ID** — Change the model (default: `global/anthropic.claude-sonnet-4-6`)
 - **PROVIDER_MAX_TOKENS** — Max response length (default: `4096`)
 - **PROVIDER_TEMPERATURE** — Sampling temperature (default: `0.2`)
 - **MAX_AGENT_ITERATIONS** — Max tool-call loops (default: `10`)
+
+## Multi-Agent Orchestration
+
+The pipeline dynamically loads agent directives from `.agent.md` files in the `agents/` directory:
+
+- **`devsecops`** (`agents/devsecops.agent.md`) — **Lead Orchestrator**: Automatically analyzes user intent and delegates tasks to the appropriate specialized sub-agent.
+- **`dockerfile`** (`agents/dockerfile.agent.md`) — **Dockerfile Engineering**: Analyzes repositories, generates production-ready Dockerfiles, and audits existing ones using DHI-approved base images.
+- **`defect-fixing`** (`agents/defect-fixing.agent.md`) — **Security Finding Remediation**: Retrieves DefectDojo findings, analyzes false positives, and provides tailored code fixes.
+- **`migration`** (`agents/migration.agent.md`) — **Kubernetes Migration**: Converts and migrates K8s manifests/Helm values into DevOps standard deployment pipeline configs.
 
 ## How It Works
 
@@ -90,16 +100,16 @@ User Message
     │
     ▼
 ┌────────────────────────┐
-│  1. Discover MCP tools │ ◄── tools/list via MCP Gateway
-│  2. Convert to OpenAI  │
-│     function format    │
+│ 1. Load Agent Directives│ ◄── agents/ (devsecops orchestrator + sub-agents)
+│ 2. Discover MCP tools  │ ◄── tools/list via MCP Gateway
+│ 3. Build System Prompt │
 └────────┬───────────────┘
          │
          ▼
 ┌────────────────────────┐
-│  3. Send messages +    │
-│     tool definitions   │ ──▶ LLM Provider API
-│     to LLM             │
+│ 4. Send messages +     │
+│    tool definitions    │ ──▶ LLM Provider API
+│    to LLM              │
 └────────┬───────────────┘
          │
     ┌────┴────┐
@@ -114,7 +124,7 @@ User Message
 │ Gateway  │  │          │
 └────┬─────┘  └──────────┘
      │
-     └──▶ Append result to conversation, loop back to step 3
+     └──▶ Append result to conversation, loop back to step 4
 ```
 
 ## Troubleshooting
@@ -151,11 +161,15 @@ docker compose exec pipelines curl -s http://ai-gateway.vayu.devopsnonprd.vayukt
 
 ```
 ai-content/
+├── agents/                           # Agent definition files (.agent.md)
+│   ├── devsecops.agent.md            # Lead DevSecOps Orchestrator
+│   ├── dockerfile.agent.md           # Dockerfile Engineering Agent
+│   ├── defect-fixing.agent.md        # DefectDojo Security Fixes Agent
+│   └── migration.agent.md            # K8s Migration Agent
 ├── .env_example                      # Template for environment variables
 ├── .env                              # Local secrets & config (git-ignored)
 ├── docker-compose.yml                # Docker stack definition
-├── kubernetes.yaml                   # Kubernetes deployment manifest
 ├── pipelines/
 │   └── mcp_agent_pipeline.py         # MCP Agent Pipeline
-└── README.md                         # This file
+└── README.md                         # Project documentation
 ```
