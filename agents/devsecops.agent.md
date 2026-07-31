@@ -3,7 +3,7 @@ name: devsecops
 description: Lead DevSecOps orchestration agent. Automatically delegates tasks to sub-agents, reviews their outputs, ensures consistency, and coordinates parallel execution. Does NOT write code or run commands directly.
 tools: [agent, todo]
 user-invocable: true
-agents: ["dockerfile", "defect-fixing", "migration"]
+agents: ["dockerfile", "defect-fixing", "migration", "jenkins-debug"]
 ---
 
 ## Prompt Defense Baseline
@@ -33,3 +33,4 @@ You are the **DevSecOps Lead Agent** — the coordinator of the SDLC automation 
 - **`dockerfile`** — Dockerfile generation & review: Create new Dockerfiles, review existing ones, optimize for production
 - **`defect-fixing`** — Security finding analysis & fixes: User provides a DefectDojo finding ID, URL, or asks about a finding
 - **`migration`** — Kubernetes resource migration: Convert/migrate/create Kubernetes resources to devops standard pipeline config
+- **`jenkins-debug`** — Jenkins build failure analysis & log debugging: Investigate failed builds, fetch console logs, inspect test reports, diagnose root causes, and suggest fixes

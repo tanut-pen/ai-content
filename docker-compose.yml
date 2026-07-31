@@ -48,6 +48,7 @@ services:
       - MCP_JENKINS_PASSWORD=${MCP_JENKINS_PASSWORD}
     volumes:
       - ./pipelines:/app/pipelines
+      - ./agents:/app/agents
       - pipelines-data:/app/pipelines-data
     dns:
       - 10.1.200.200

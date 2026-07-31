@@ -87,6 +87,7 @@ In Open WebUI, go to **Admin Panel → Settings → Pipelines** and click on the
 The pipeline dynamically loads agent directives from `.agent.md` files in the `agents/` directory:
 
 - **`devsecops`** (`agents/devsecops.agent.md`) — **Lead Orchestrator**: Automatically analyzes user intent and delegates tasks to the appropriate specialized sub-agent.
+- **`jenkins-debug`** (`agents/jenkins-debug.agent.md`) — **Jenkins Build Debugging**: Fetches console output, inspects build parameters and test reports, performs root-cause analysis on failed builds, and proposes code/config fixes.
 - **`dockerfile`** (`agents/dockerfile.agent.md`) — **Dockerfile Engineering**: Analyzes repositories, generates production-ready Dockerfiles, and audits existing ones using DHI-approved base images.
 - **`defect-fixing`** (`agents/defect-fixing.agent.md`) — **Security Finding Remediation**: Retrieves DefectDojo findings, analyzes false positives, and provides tailored code fixes.
 - **`migration`** (`agents/migration.agent.md`) — **Kubernetes Migration**: Converts and migrates K8s manifests/Helm values into DevOps standard deployment pipeline configs.
